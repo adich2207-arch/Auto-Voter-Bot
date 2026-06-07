@@ -4,6 +4,7 @@ Uses HTML parse mode to render <tg-emoji> custom stickers.
 Run: python bot.py
 """
 
+import asyncio
 import json
 import logging
 import os
@@ -798,19 +799,12 @@ async def h_cancel(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
 #  APP SETUP
 # ══════════════════════════════════════════════════════════════════════
 
-async def post_init(app: Application) -> None:
-    """Called once after the app is initialized — safe place to init the DB."""
-    await db.init_db()
-    log.info("Database initialized.")
-
+# ══════════════════════════════════════════════════════════════════════
+#  APP SETUP
+# ══════════════════════════════════════════════════════════════════════
 
 def build_app() -> Application:
-    app = (
-        Application.builder()
-        .token(BOT_TOKEN)
-        .post_init(post_init)
-        .build()
-    )
+    app = Application.builder().token(BOT_TOKEN).build()
 
     app.add_handler(CommandHandler("start", cmd_start))
 
@@ -859,8 +853,48 @@ def build_app() -> Application:
 
 # ══════════════════════════════════════════════════════════════════════
 #  ENTRY POINT
+#  We drive the bot manually with asyncio.run() to avoid the
+#  asyncio.get_event_loop() removal in Python 3.14 that breaks
+#  PTB's synchronous run_polling() wrapper.
 # ══════════════════════════════════════════════════════════════════════
+
+async def main() -> None:
+    await db.init_db()
+    log.info("Database ready.")
+
+    app = build_app()
+
+    await app.initialize()
+    await app.start()
+    await app.updater.start_polling(drop_pending_updates=True)
+
+    log.info("Bot is running. Press Ctrl+C to stop.")
+
+    # Block until SIGINT / SIGTERM (works on Linux/Render and Windows)
+    stop_event = asyncio.Event()
+
+    import signal, sys
+
+    def _request_stop(*_):
+        stop_event.set()
+
+    # Register OS signals only on platforms that support it (Linux/Mac)
+    if sys.platform != "win32":
+        loop = asyncio.get_running_loop()
+        for sig in (signal.SIGINT, signal.SIGTERM):
+            loop.add_signal_handler(sig, _request_stop)
+
+    try:
+        await stop_event.wait()
+    except (KeyboardInterrupt, SystemExit):
+        pass
+    finally:
+        log.info("Shutting down...")
+        await app.updater.stop()
+        await app.stop()
+        await app.shutdown()
+
 
 if __name__ == "__main__":
     log.info("Auto Voter Bot starting...")
-    build_app().run_polling(drop_pending_updates=True)
+    asyncio.run(main())
