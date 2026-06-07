@@ -4,7 +4,6 @@ Uses HTML parse mode to render <tg-emoji> custom stickers.
 Run: python bot.py
 """
 
-import asyncio
 import json
 import logging
 import os
@@ -207,7 +206,6 @@ async def show_main_menu(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
 # ══════════════════════════════════════════════════════════════════════
 
 async def cmd_start(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
-    await db.init_db()
     await show_main_menu(update, ctx)
 
 
@@ -800,8 +798,19 @@ async def h_cancel(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
 #  APP SETUP
 # ══════════════════════════════════════════════════════════════════════
 
+async def post_init(app: Application) -> None:
+    """Called once after the app is initialized — safe place to init the DB."""
+    await db.init_db()
+    log.info("Database initialized.")
+
+
 def build_app() -> Application:
-    app = Application.builder().token(BOT_TOKEN).build()
+    app = (
+        Application.builder()
+        .token(BOT_TOKEN)
+        .post_init(post_init)
+        .build()
+    )
 
     app.add_handler(CommandHandler("start", cmd_start))
 
@@ -815,6 +824,7 @@ def build_app() -> Application:
         },
         fallbacks=[CommandHandler("cancel", cancel_conv)],
         allow_reentry=True,
+        per_message=False,
     ))
 
     # ── Campaign flow ──────────────────────────────────────────────────
@@ -827,6 +837,7 @@ def build_app() -> Application:
         },
         fallbacks=[CommandHandler("cancel", cancel_conv)],
         allow_reentry=True,
+        per_message=False,
     ))
 
     # ── Button callbacks ───────────────────────────────────────────────
@@ -851,6 +862,5 @@ def build_app() -> Application:
 # ══════════════════════════════════════════════════════════════════════
 
 if __name__ == "__main__":
-    asyncio.run(db.init_db())
     log.info("Auto Voter Bot starting...")
     build_app().run_polling(drop_pending_updates=True)
